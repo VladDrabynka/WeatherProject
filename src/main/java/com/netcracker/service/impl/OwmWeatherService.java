@@ -1,5 +1,8 @@
-package com.netcracker.service;
+package com.netcracker.service.impl;
 
+import com.fasterxml.jackson.databind.DeserializationConfig;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -7,86 +10,81 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringWriter;
+import java.sql.Timestamp;
+import java.util.Date;
 import java.util.Locale;
 
-import com.netcracker.model.FullWeatherInfo;
+import com.netcracker.model.WeatherInfo;
+import com.netcracker.service.WeatherService;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.util.EntityUtils;
+import org.apache.log4j.Logger;
+import org.springframework.stereotype.Service;
 
+@Service
+public class OwmWeatherService implements WeatherService {
 
-public class WeatherService {
+    private final static Logger logger = Logger.getLogger(OwmWeatherService.class);
 
     static private final String APPID_HEADER = "x-api-key";
-
 
     private String baseOwmUrl = "http://api.openweathermap.org/data/2.5/";
     private String owmAPPID = "1d66f0f454d6133e0e9be0ea797a1e2b";
 
     private HttpClient httpClient;
 
-    public WeatherService() {
+    public OwmWeatherService() {
         this.httpClient = new DefaultHttpClient();
     }
 
-    public WeatherService(HttpClient httpClient) {
+    public OwmWeatherService(HttpClient httpClient) {
         if (httpClient == null)
             throw new IllegalArgumentException("Can't construct a OwmClient with a null HttpClient");
         this.httpClient = httpClient;
     }
 
-    /**
-     * Find current city weather
-     *
-     * @param cityId is the ID of the city
-     * @return the StatusWeatherData received
-     * @throws JSONException if the response from the OWM server can't be parsed
-     * @throws IOException   if there's some network error or the OWM server replies with a error.
-     */
-    public StatusWeatherData currentWeatherAtCity(int cityId) throws IOException, JSONException {
-        String subUrl = String.format(Locale.ROOT, "weather/city/%d?type=json", Integer.valueOf(cityId));
-        JSONObject response = doQuery(subUrl);
-        return new StatusWeatherData(response);
+    public WeatherInfo currentWeatherAtCity(int cityId) {
+        try {
+            String subUrl = String.format(Locale.ROOT, "weather?id=%d&units=metric", cityId);
+            return doQuery(subUrl);
+        } catch (IOException ex){
+            logger.error("Exception in OwmWeatherService: ", ex);
+        }
+        return null;
     }
 
-    /**
-     * Find current city weather
-     *
-     * @param cityName is the name of the city
-     * @return the StatusWeatherData received
-     * @throws JSONException if the response from the OWM server can't be parsed
-     * @throws IOException   if there's some network error or the OWM server replies with a error.
-     */
-    public WeatherStatusResponse currentWeatherAtCity(String cityName) throws IOException, JSONException {
-        String subUrl = String.format(Locale.ROOT, "find/name?q=%s", cityName);
-        JSONObject response = doQuery(subUrl);
-        return new WeatherStatusResponse(response);
+    public WeatherInfo currentWeatherAtCity(String cityName){
+        try {
+            String subUrl = String.format(Locale.ROOT, "weather?q=%s&units=metric", cityName);
+            return doQuery(subUrl);
+        } catch (IOException ex){
+            logger.error("Exception in OwmWeatherService: ", ex);
+        }
+        return null;
     }
 
-    /**
-     * Find current city weather
-     *
-     * @param cityName    is the name of the city
-     * @param countryCode is the two letter country code
-     * @return the StatusWeatherData received
-     * @throws JSONException if the response from the OWM server can't be parsed
-     * @throws IOException   if there's some network error or the OWM server replies with a error.
-     */
-    public WeatherStatusResponse currentWeatherAtCity(String cityName, String countryCode) throws IOException, JSONException {
-        String subUrl = String.format(Locale.ROOT, "find/name?q=%s,%s", cityName, countryCode.toUpperCase());
-        JSONObject response = doQuery(subUrl);
-        return new WeatherStatusResponse(response);
+    public WeatherInfo currentWeatherAtCity(String cityName, String countryCode) {
+        try {
+            String subUrl = String.format(Locale.ROOT, "weather?q=%s,%s&units=metric", cityName, countryCode.toUpperCase());
+            return doQuery(subUrl);
+        } catch (IOException ex){
+            logger.error("Exception in OwmWeatherService: ", ex);
+        }
+        return null;
     }
 
-    private FullWeatherInfo doQuery(String subUrl) throws IOException {
+    private WeatherInfo doQuery(String subUrl) throws IOException {
         ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         String responseBody;
         HttpGet httpget = new HttpGet(this.baseOwmUrl + subUrl);
         if (this.owmAPPID != null) {
-            httpget.addHeader(WeatherService.APPID_HEADER, this.owmAPPID);
+            httpget.addHeader(OwmWeatherService.APPID_HEADER, this.owmAPPID);
         }
 
         HttpResponse response = this.httpClient.execute(httpget);
@@ -116,15 +114,40 @@ public class WeatherService {
             }
             responseBody = strWriter.toString();
             contentStream.close();
+            EntityUtils.consume(responseEntity);
         } catch (IOException e) {
             throw e;
-        } catch (RuntimeException re) {
+        } catch (RuntimeException ex) {
             httpget.abort();
-            throw re;
+            throw ex;
         } finally {
             if (contentStream != null)
                 contentStream.close();
         }
-        return mapper.readValue(responseBody, FullWeatherInfo.class);
+        WeatherInfo info = null;
+        try {
+            JsonNode root = mapper.readTree(responseBody);
+
+            long visibility = root.path("visibility").asLong();
+            Timestamp dt = new Timestamp(root.path("dt").asLong());
+
+            JsonNode main = root.path("main");
+            double temp = main.path("temp").asDouble();
+            long pressure = main.path("pressure").asLong();
+            long humidity = main.path("humidity").asLong();
+            double temp_min = main.path("temp_min").asDouble();
+            double temp_max = main.path("temp_max").asDouble();
+
+            JsonNode sys = root.path("sys");
+            Timestamp sunrise = new Timestamp(sys.path("sunrise").asLong());
+            Timestamp sunset = new Timestamp(sys.path("sunset").asLong());
+
+            info = new WeatherInfo(temp, pressure, humidity, temp_min, temp_max, visibility,
+                    dt, sunrise, sunset);
+        } catch (Exception ex){
+            System.out.println(ex.getMessage());
+        }
+        contentStream.close();
+        return info;
     }
 }

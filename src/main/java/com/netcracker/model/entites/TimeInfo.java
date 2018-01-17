@@ -5,7 +5,7 @@ import java.sql.Timestamp;
 
 @Entity
 @Table(name = "TIME_INFO")
-public class TimeInformation {
+public class TimeInfo {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -18,12 +18,16 @@ public class TimeInformation {
     @Column(name = "sunset", nullable = false)
     private Timestamp sunset;
 
-    public TimeInformation() {
+    @Column(name = "date_calc", nullable = false)
+    private Timestamp dateCalculation;
+
+    public TimeInfo() {
     }
 
-    public TimeInformation(Timestamp sunrise, Timestamp sunset) {
+    public TimeInfo(Timestamp sunrise, Timestamp sunset, Timestamp dateCalculation) {
         this.sunrise = sunrise;
         this.sunset = sunset;
+        this.dateCalculation = dateCalculation;
     }
 
     public Long getTimeId() {
@@ -50,12 +54,21 @@ public class TimeInformation {
         this.sunset = sunset;
     }
 
+    public Timestamp getDateCalculation() {
+        return dateCalculation;
+    }
+
+    public void setDateCalculation(Timestamp dateCalculation) {
+        this.dateCalculation = dateCalculation;
+    }
+
     @Override
     public String toString() {
-        return "TimeInformation{" +
+        return "TimeInfo{" +
                 "timeId=" + timeId +
                 ", sunrise=" + sunrise +
                 ", sunset=" + sunset +
+                ", dateCalculation=" + dateCalculation +
                 '}';
     }
 }
